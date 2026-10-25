@@ -356,3 +356,60 @@ fn sample_account_serializes_camel_case() {
     assert!(json.get("codexHomePath").is_some());
     assert!(json.get("providerAccountId").is_some());
 }
+
+#[test]
+fn reconciliation_promotes_switched_account_to_ambient_and_demotes_previous() {
+    let mut account_a = sample_account();
+    account_a.id = Uuid::new_v4();
+    account_a.email_hint = Some("user-a@example.com".into());
+    account_a.auth_subject = Some("auth0|user-a".into());
+    account_a.nickname = Some("Account A".into());
+    account_a.source = codexbar::codex_accounts::CodexAccountSource::Ambient;
+    account_a.codex_home_path = std::path::PathBuf::from("/ambient/codex");
+
+    let mut account_b = sample_account();
+    account_b.id = Uuid::new_v4();
+    account_b.email_hint = Some("user-b@example.com".into());
+    account_b.auth_subject = Some("auth0|user-b".into());
+    account_b.nickname = Some("Account B".into());
+    account_b.source = codexbar::codex_accounts::CodexAccountSource::ManagedByApp;
+    account_b.codex_home_path = std::path::PathBuf::from("/managed/homes/b");
+
+    // Existing persisted accounts before switch
+    let existing = vec![account_a.clone(), account_b.clone()];
+
+    // After switch: Account A was materialized to managed home; Account B still has files in managed home
+    let mut materialized_a = account_a.clone();
+    materialized_a.source = codexbar::codex_accounts::CodexAccountSource::ManagedByApp;
+    materialized_a.codex_home_path = std::path::PathBuf::from("/managed/homes/a");
+
+    let managed = vec![materialized_a.clone(), account_b.clone()];
+
+    // Fresh ambient discovery now discovers Account B at ~/.codex
+    let mut fresh_ambient_b = account_b.clone();
+    fresh_ambient_b.id = Uuid::new_v4(); // fresh discovery might generate a new ID before matching
+    fresh_ambient_b.source = codexbar::codex_accounts::CodexAccountSource::Ambient;
+    fresh_ambient_b.codex_home_path = std::path::PathBuf::from("/ambient/codex");
+
+    let reconciled = reconcile_codex_accounts(&existing, &managed, Some(fresh_ambient_b));
+
+    // Must have exactly 2 accounts (no duplicates of B)
+    assert_eq!(reconciled.len(), 2);
+
+    // Active ambient account must be Account B with Ambient source and ambient home
+    let active = ambient_account(&reconciled).expect("must have active ambient account");
+    assert_eq!(active.id, account_b.id);
+    assert_eq!(active.email_hint.as_deref(), Some("user-b@example.com"));
+    assert_eq!(active.nickname.as_deref(), Some("Account B"));
+    assert_eq!(active.source, codexbar::codex_accounts::CodexAccountSource::Ambient);
+    assert_eq!(active.codex_home_path, std::path::PathBuf::from("/ambient/codex"));
+
+    // Account A must now be ManagedByApp
+    let managed_a = reconciled
+        .iter()
+        .find(|a| a.matches(&account_a))
+        .expect("account A must still exist in reconciled accounts");
+    assert_eq!(managed_a.source, codexbar::codex_accounts::CodexAccountSource::ManagedByApp);
+    assert_eq!(managed_a.nickname.as_deref(), Some("Account A"));
+    assert_eq!(managed_a.codex_home_path, std::path::PathBuf::from("/managed/homes/a"));
+}

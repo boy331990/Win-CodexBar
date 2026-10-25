@@ -40,45 +40,92 @@ fn reconcile_codex_accounts(
     managed: &[CodexAccount],
     ambient: Option<CodexAccount>,
 ) -> Vec<CodexAccount> {
-    let mut merged: Vec<CodexAccount> = managed.to_vec();
-    if let Some(ambient) = ambient {
-        if let Some(entry) = merged.iter_mut().find(|account| account.matches(&ambient)) {
-            entry.merge_from(&ambient);
+    let mut reconciled = Vec::new();
+
+    // 1. Ambient account reconciliation:
+    // If an ambient account is discovered, it is the authoritative active account.
+    // Retain persisted user metadata (nickname, id, created_at) from an existing matching
+    // account, but promote its source to Ambient and home to the ambient path.
+    let ambient_account = ambient.map(|fresh_ambient| {
+        if let Some(matched) = existing.iter().find(|account| account.matches(&fresh_ambient)) {
+            let mut promoted = matched.clone();
+            promoted.source = CodexAccountSource::Ambient;
+            promoted.codex_home_path = fresh_ambient.codex_home_path.clone();
+            promoted.merge_from(&fresh_ambient);
+            promoted
+        } else if let Some(matched) = managed.iter().find(|account| account.matches(&fresh_ambient)) {
+            let mut promoted = matched.clone();
+            promoted.source = CodexAccountSource::Ambient;
+            promoted.codex_home_path = fresh_ambient.codex_home_path.clone();
+            promoted.merge_from(&fresh_ambient);
+            promoted
         } else {
-            merged.push(ambient);
+            fresh_ambient
         }
+    });
+
+    if let Some(ref active) = ambient_account {
+        reconciled.push(active.clone());
     }
 
-    // Reconcile persisted metadata (nickname, stored timestamps) for managed homes.
-    let mut reconciled: Vec<CodexAccount> = existing
+    // 2. Managed accounts reconciliation:
+    // Any managed home not matching the ambient identity remains a managed account.
+    let non_ambient_managed: Vec<CodexAccount> = managed
         .iter()
-        // The ambient home can change identity outside this app. Always use
-        // its fresh discovery instead of retaining an old record for that path.
+        .filter(|account| {
+            ambient_account
+                .as_ref()
+                .is_none_or(|active| !account.matches(active))
+        })
+        .cloned()
+        .collect();
+
+    // Reconcile persisted metadata (nickname, stored timestamps) for managed homes.
+    let mut reconciled_managed: Vec<CodexAccount> = existing
+        .iter()
         .filter(|account| account.source.owns_files())
+        // Do not retain a managed home record if it now matches the ambient identity
+        .filter(|account| {
+            ambient_account
+                .as_ref()
+                .is_none_or(|active| !account.matches(active))
+        })
         // A managed home can also be reauthenticated outside the app. Do not
         // retain its former identity alongside the account now owning its auth.
         .filter(|account| {
-            !managed.iter().any(|fresh| {
+            !non_ambient_managed.iter().any(|fresh| {
                 fresh.standardized_home_path() == account.standardized_home_path()
                     && !fresh.matches(account)
             })
         })
         .map(|account| {
             let mut account = account.clone();
-            if let Some(fresh) = managed.iter().find(|fresh| fresh.matches(&account)) {
+            if let Some(fresh) = non_ambient_managed.iter().find(|fresh| fresh.matches(&account)) {
                 account.merge_from(fresh);
             }
             account
         })
         .collect();
 
-    // Add any newly discovered accounts that are not yet persisted.
-    for candidate in &merged {
-        if !reconciled.iter().any(|account| account.matches(candidate)) {
-            reconciled.push(candidate.clone());
+    // Add any newly discovered managed accounts that are not yet persisted.
+    for candidate in &non_ambient_managed {
+        if !reconciled_managed.iter().any(|account| account.matches(candidate)) {
+            let mut fresh_candidate = candidate.clone();
+            if let Some(matched_existing) = existing.iter().find(|acc| candidate.matches(acc)) {
+                if fresh_candidate
+                    .nickname
+                    .as_deref()
+                    .map(str::trim)
+                    .is_none_or(|s| s.is_empty())
+                {
+                    fresh_candidate.nickname = matched_existing.nickname.clone();
+                }
+            }
+            reconciled_managed.push(fresh_candidate);
         }
     }
 
+    reconciled.extend(reconciled_managed);
     reconciled
 }
 
@@ -440,7 +487,17 @@ pub async fn codex_account_switch(
         invalidate_account_usage(&mut state, ProviderId::Codex)
     };
     events::emit_provider_updated(&app, &pending);
-    persist_materialized_account(result.materialized_account.as_ref());
+    // Invalidate the in-memory credential cache so any upcoming fetch reads the
+    // newly copied credentials from auth.json instead of the previous identity.
+    codexbar::providers::codex::invalidate_credential_cache();
+
+    // Persist the reconciled state (both the newly promoted ambient account
+    // and the materialized previous ambient account) to the account store.
+    if let Err(e) = refresh_persisted_accounts(app.clone(), RegistryOperation::Switch) {
+        tracing::warn!("Codex account switched but account metadata could not be saved: {e}");
+        events::emit_settings_changed(&app);
+        accounts_changed(&app);
+    }
 
     // Discovery must see the persisted account ID before a lane fetch starts.
     // Credential replacement is already committed. Even if optional account
@@ -450,8 +507,6 @@ pub async fn codex_account_switch(
         let _ = do_refresh_providers(&refresh_app).await;
     });
 
-    events::emit_settings_changed(&app);
-    accounts_changed(&app);
     Ok(result)
 }
 

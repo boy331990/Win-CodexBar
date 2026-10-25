@@ -245,6 +245,7 @@ impl CodexAccountManager {
         fs::create_dir_all(ambient_codex_home())?;
         let backup_path = self.backup_ambient_auth()?;
         copy_private_file(&target_auth_path, &ambient_codex_home().join("auth.json"))?;
+        crate::providers::codex::invalidate_credential_cache();
         self.sync_ambient_global_state(
             ambient_account
                 .as_ref()

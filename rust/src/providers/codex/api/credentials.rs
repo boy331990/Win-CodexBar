@@ -208,6 +208,12 @@ impl CodexApi {
         CREDENTIAL_CACHE.get_or_init(|| Mutex::new(None))
     }
 
+    pub(crate) fn invalidate_credential_cache() {
+        if let Ok(mut guard) = Self::credential_cache().lock() {
+            *guard = None;
+        }
+    }
+
     fn cached_credentials(
         path: &std::path::Path,
         modified: Option<SystemTime>,

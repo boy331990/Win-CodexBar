@@ -18,6 +18,7 @@ use crate::core::{
 };
 
 pub use api::CodexApi;
+pub use api::invalidate_credential_cache;
 
 /// Limit reset detection (upstream `UsageStore+LimitResetCelebration.swift`):
 /// a weekly reset needs a known boundary that advanced, and samples without an
