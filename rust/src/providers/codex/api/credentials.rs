@@ -208,7 +208,7 @@ impl CodexApi {
         CREDENTIAL_CACHE.get_or_init(|| Mutex::new(None))
     }
 
-    pub(crate) fn invalidate_credential_cache() {
+    pub fn invalidate_credential_cache() {
         if let Ok(mut guard) = Self::credential_cache().lock() {
             *guard = None;
         }
@@ -245,7 +245,7 @@ impl CodexApi {
     }
 }
 
-pub(crate) fn invalidate_credential_cache() {
+pub fn invalidate_credential_cache() {
     CodexApi::invalidate_credential_cache();
 }
 

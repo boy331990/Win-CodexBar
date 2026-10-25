@@ -13,7 +13,7 @@ mod parse;
 mod reset_credits;
 
 use credentials::CodexCredentials;
-pub(crate) use credentials::invalidate_credential_cache;
+pub use credentials::invalidate_credential_cache;
 use parse::format_plan_type;
 use reset_credits::apply_reset_credits_window;
 pub(super) use reset_credits::{ResetCredit, ResetCredits, next_available_reset_credit_expiry};
