@@ -493,7 +493,7 @@ pub async fn codex_account_switch(
 
     // Persist the reconciled state (both the newly promoted ambient account
     // and the materialized previous ambient account) to the account store.
-    if let Err(e) = refresh_persisted_accounts(app.clone(), RegistryOperation::Switch) {
+    if let Err(e) = refresh_persisted_accounts(app.clone(), RegistryOperation::RegistryWrite) {
         tracing::warn!("Codex account switched but account metadata could not be saved: {e}");
         events::emit_settings_changed(&app);
         accounts_changed(&app);
