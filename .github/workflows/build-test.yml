@@ -28,31 +28,37 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          package_json_file: apps/desktop-tauri/package.json
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24.18.0
-          cache: pnpm
-          cache-dependency-path: apps/desktop-tauri/pnpm-lock.yaml
+
+      - name: Install pnpm globally
+        shell: pwsh
+        run: npm install -g pnpm@11.25.0
 
       - name: Install frontend dependencies
-        run: pnpm --dir apps/desktop-tauri install --frozen-lockfile
+        shell: pwsh
+        working-directory: apps/desktop-tauri
+        run: pnpm install --frozen-lockfile
 
-      - name: Build frontend and desktop binary
-        run: pnpm --dir apps/desktop-tauri run tauri:build
+      - name: Build frontend
+        shell: pwsh
+        working-directory: apps/desktop-tauri
+        run: pnpm run build
+
+      - name: Build Tauri desktop binary
+        shell: pwsh
+        working-directory: apps/desktop-tauri
+        run: pnpm exec tauri build --no-bundle --ci
 
       - name: Prepare artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          Copy-Item -Path "target\release\codexbar-desktop-tauri.exe" -Destination "artifacts\CodexBar.exe"
-          if (Test-Path -LiteralPath "target\release\codexbar.exe") {
-            Copy-Item -Path "target\release\codexbar.exe" -Destination "artifacts\codexbar-cli.exe"
+          Get-ChildItem -Path target\ -Filter "*codexbar*.exe" -Recurse | ForEach-Object {
+            Write-Host "Found binary: $($_.FullName)"
+            Copy-Item -Path $_.FullName -Destination "artifacts\$($_.Name)"
           }
 
       - name: Upload CodexBar executable
