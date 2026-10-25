@@ -245,6 +245,10 @@ impl CodexApi {
     }
 }
 
+pub(crate) fn invalidate_credential_cache() {
+    CodexApi::invalidate_credential_cache();
+}
+
 #[derive(Clone)]
 pub(super) struct CodexCredentials {
     pub(super) access_token: String,
