@@ -324,15 +324,15 @@ fn positive_inventory_without_history_requires_reads_after_last_publish() {
 #[test]
 fn different_account_never_reuses_another_accounts_state() {
     let auth_path = Path::new("C:/shared/auth.json");
-    let account_a = scope_key(Some("account-a"), auth_path);
-    let account_b = scope_key(Some("account-b"), auth_path);
-    let home_only = scope_key(None, auth_path);
+    let account_a = scope_key(Some("account-a"), None, auth_path);
+    let account_b = scope_key(Some("account-b"), None, auth_path);
+    let home_only = scope_key(None, None, auth_path);
     assert_ne!(account_a, account_b);
     assert_ne!(account_a, home_only);
     assert_ne!(account_b, home_only);
     // The account id scopes the state, not the auth file location.
     assert_eq!(
-        scope_key(Some("account-a"), Path::new("D:/elsewhere/auth.json")),
+        scope_key(Some("account-a"), None, Path::new("D:/elsewhere/auth.json")),
         account_a
     );
 

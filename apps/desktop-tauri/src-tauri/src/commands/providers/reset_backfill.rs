@@ -20,9 +20,14 @@ pub(super) fn codex_reset_backfill(
     if !matches!(snapshot.provider_id.as_str(), "codex" | "zai") {
         return;
     }
-    // A subscription change starts a new quota baseline: reset times from the
-    // previous plan are not evidence for the new one. Unknown plans never block.
-    if snapshot.provider_id == "codex" && codex_plan_changed(cached, snapshot) {
+    // A subscription change or account switch starts a new quota baseline: reset times from the
+    // previous plan/account are not evidence for the new one. Unknown plans never block.
+    if snapshot.provider_id == "codex"
+        && (codex_plan_changed(cached, snapshot)
+            || (cached.account_email.is_some()
+                && snapshot.account_email.is_some()
+                && cached.account_email != snapshot.account_email))
+    {
         return;
     }
 

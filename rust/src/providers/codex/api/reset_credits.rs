@@ -37,10 +37,17 @@ impl CodexApi {
     ) -> Arc<AsyncMutex<ResetCreditsCache>> {
         // The Codex home is part of the scope: two homes never share an
         // observation, even when they hold the same account and token.
-        let auth_path = self.get_auth_path();
-        let home = weekly_reset::scope_key(None, &auth_path);
-        let account = weekly_reset::scope_key(creds.account_id.as_deref(), &auth_path);
-        let token = weekly_reset::scope_key(Some(&creds.access_token), &auth_path);
+        let home = weekly_reset::scope_key(None, None, &auth_path);
+        let account = weekly_reset::scope_key(
+            creds.account_id.as_deref(),
+            creds.account_email.as_deref(),
+            &auth_path,
+        );
+        let token = weekly_reset::scope_key(
+            Some(&creds.access_token),
+            creds.account_email.as_deref(),
+            &auth_path,
+        );
         let key = format!(
             "{}|{home}|{account}|{token}",
             base_url.trim_end_matches('/')

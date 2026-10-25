@@ -275,8 +275,12 @@ fn credits_only_refresh_retains_candidate_and_account_scope_hashes_differ() {
         candidate_before
     );
     assert_ne!(
-        scope_key(Some("account-a"), Path::new("C:/a/auth.json")),
-        scope_key(Some("account-b"), Path::new("C:/b/auth.json"))
+        scope_key(Some("account-a"), None, Path::new("C:/a/auth.json")),
+        scope_key(Some("account-b"), None, Path::new("C:/b/auth.json"))
+    );
+    assert_ne!(
+        scope_key(Some("account-same"), Some("user1@example.com"), Path::new("C:/a/auth.json")),
+        scope_key(Some("account-same"), Some("user2@example.com"), Path::new("C:/a/auth.json"))
     );
 }
 

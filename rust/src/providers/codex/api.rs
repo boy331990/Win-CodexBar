@@ -129,8 +129,11 @@ impl CodexApi {
     > {
         let creds = self.load_credentials().await?;
         let base_url = self.resolve_base_url();
-        let auth_path = self.get_auth_path();
-        let scope = weekly_reset::scope_key(creds.account_id.as_deref(), &auth_path);
+        let scope = weekly_reset::scope_key(
+            creds.account_id.as_deref(),
+            creds.account_email.as_deref(),
+            &auth_path,
+        );
         let exact_oauth = creds.is_external_oauth;
         let mut state = weekly_reset::load(&scope);
 

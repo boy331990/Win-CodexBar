@@ -490,6 +490,7 @@ pub async fn codex_account_switch(
     // Invalidate the in-memory credential cache so any upcoming fetch reads the
     // newly copied credentials from auth.json instead of the previous identity.
     codexbar::providers::codex::invalidate_credential_cache();
+    codexbar::providers::codex::clear_weekly_reset_state();
 
     // Persist the reconciled state (both the newly promoted ambient account
     // and the materialized previous ambient account) to the account store.

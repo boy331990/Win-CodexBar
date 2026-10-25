@@ -31,6 +31,8 @@ pub(super) struct AccountState {
     published_weekly: Option<RateWindow>,
     published_at: DateTime<Utc>,
     plan: Option<String>,
+    #[serde(default)]
+    account_email: Option<String>,
     credit_inventory: Option<CreditInventory>,
     candidate: Option<DelayedCandidate>,
 }
@@ -41,6 +43,7 @@ impl Default for AccountState {
             published_weekly: None,
             published_at: DateTime::<Utc>::UNIX_EPOCH,
             plan: None,
+            account_email: None,
             credit_inventory: None,
             candidate: None,
         }
@@ -151,14 +154,34 @@ enum ResetCreditEvidence {
     NoInventoryToPreserve,
 }
 
-pub(super) fn scope_key(account_id: Option<&str>, auth_path: &Path) -> String {
-    let raw = account_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| format!("account:{value}"))
-        .unwrap_or_else(|| format!("home:{}", auth_path.to_string_lossy().to_lowercase()));
+pub(super) fn scope_key(
+    account_id: Option<&str>,
+    account_email: Option<&str>,
+    auth_path: &Path,
+) -> String {
+    let mut parts = Vec::new();
+    if let Some(id) = account_id.map(str::trim).filter(|value| !value.is_empty()) {
+        parts.push(format!("account:{id}"));
+    }
+    if let Some(email) = account_email.map(str::trim).filter(|value| !value.is_empty()) {
+        parts.push(format!("email:{}", email.to_lowercase()));
+    }
+    let raw = if parts.is_empty() {
+        format!("home:{}", auth_path.to_string_lossy().to_lowercase())
+    } else {
+        parts.join("|")
+    };
     let digest = Sha256::digest(raw.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Reset all persisted weekly reset tracking state (e.g. on account switch).
+pub fn clear_weekly_reset_state() {
+    if let Some(path) = state_path() {
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 /// An unreadable, malformed or other-version state file reads as absent.
@@ -295,8 +318,8 @@ pub(super) fn initial_decision(
     exact_oauth: bool,
     observed_at: DateTime<Utc>,
 ) -> InitialDecision {
-    if exact_oauth && plan_changed(state, current) {
-        // A new subscription has its own quota baseline, not evidence of a
+    if exact_oauth && (plan_changed(state, current) || email_changed(state, current)) {
+        // A new subscription or account has its own quota baseline, not evidence of a
         // reset on the previous plan: drop the stored weekly window, pending
         // candidate, and credit inventory so the old plan cannot be pinned.
         log_reset_diagnostic("planBaseline", "reset", ResetDiagnosticReason::PlanChanged);
@@ -624,6 +647,9 @@ pub(super) fn commit_publication(
         if normalized_plan(snapshot.login_method.as_deref()).is_some() {
             state.plan = snapshot.login_method.clone();
         }
+        if let Some(email) = &snapshot.account_email {
+            state.account_email = Some(email.clone());
+        }
         state.credit_inventory = inventory;
         state.candidate = None;
     }
@@ -718,6 +744,14 @@ fn plan_changed(state: &AccountState, current: &UsageSnapshot) -> bool {
         normalized_plan(current.login_method.as_deref()),
     ) {
         (Some(previous), Some(current)) => previous != current,
+        _ => false,
+    }
+}
+
+/// True only when both account emails are known and differ (multi-account switch).
+fn email_changed(state: &AccountState, current: &UsageSnapshot) -> bool {
+    match (&state.account_email, &current.account_email) {
+        (Some(previous), Some(current)) => !previous.eq_ignore_ascii_case(current),
         _ => false,
     }
 }
